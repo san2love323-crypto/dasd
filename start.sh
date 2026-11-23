@@ -33,10 +33,10 @@ if [ ! -f .env ]; then
 fi
 
 echo "[3/3] 설정 점검"
-if ! python run.py --check; then
+if ! python main.py --check; then
   echo
   echo "!! 위 항목을 .env 에 채운 뒤 다시 실행하세요."
   exit 1
 fi
 
-exec python run.py
+exec python main.py

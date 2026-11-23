@@ -38,7 +38,7 @@ if not exist .env (
 )
 
 echo [3/3] 설정 점검
-python run.py --check
+python main.py --check
 if errorlevel 1 (
   echo.
   echo !! 위 항목을 .env 에 채운 뒤 다시 실행하세요.
@@ -46,5 +46,5 @@ if errorlevel 1 (
   exit /b 1
 )
 
-python run.py
+python main.py
 pause

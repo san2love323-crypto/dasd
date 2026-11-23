@@ -12,6 +12,7 @@ from .config import Settings
 from .db import Database, DatabaseError, InsufficientBalance, LicenseError
 from .deposits import DepositProcessor
 from .plans import Plan, resolve_plan
+from .settings_store import SettingsError, SettingsStore
 
 log = logging.getLogger("vendrix.service")
 
@@ -51,18 +52,26 @@ class ShopService:
         self.settings = settings
         self.bot = bot
         self.notifier: Any | None = None
-        self.processor = DepositProcessor(db, settings)
+        self.store = SettingsStore(db, settings)
+        self.processor = DepositProcessor(db, self.store)
+        self.pushbullet: Any | None = None
 
     def attach_notifier(self, notifier: Any) -> None:
         self.notifier = notifier
         self.processor.notifier = notifier
+
+    async def restart_pushbullet(self) -> bool:
+        listener = self.pushbullet
+        if listener is None:
+            return False
+        return await listener.reconfigure(self.store.pushbullet_token())
 
     # ------------------------------------------------------------------ gates
     def require_shop(self, guild_id: str | int, *, for_buy: bool = False) -> dict:
         guild = self.db.get_guild(guild_id)
         if guild is None or not int(guild.get("registered_at") or 0):
             raise ShopError("이 서버는 아직 등록되지 않았습니다. `/등록` 으로 상점을 등록해 주세요.")
-        if self.settings.license_enforce and not self.db.license_valid(guild):
+        if self.store.license_enforce() and not self.db.license_valid(guild):
             raise ShopError(
                 f"라이센스가 만료되었습니다. (만료일 {utils.fmt_dt(guild.get('license_expires_at'))}) "
                 "오너에게 새 라이센스 키를 요청하세요."
@@ -170,29 +179,34 @@ class ShopService:
     def create_deposit_request(self, guild_id: str | int, discord_id: str | int, amount: int, depositor: str) -> dict:
         guild = self.require_shop(guild_id)
         amount = int(amount)
-        if amount < MIN_DEPOSIT:
-            raise ShopError(f"최소 입금 금액은 {utils.fmt_won(MIN_DEPOSIT)}입니다.")
-        if amount > 10_000_000:
-            raise ShopError("1회 입금 요청 한도는 10,000,000원입니다.")
+        min_amount = self.store.min_deposit(guild_id)
+        max_amount = self.store.max_deposit(guild_id)
+        if amount < min_amount:
+            raise ShopError(f"최소 입금 금액은 {utils.fmt_won(min_amount)}입니다.")
+        if amount > max_amount:
+            raise ShopError(f"1회 입금 요청 한도는 {utils.fmt_won(max_amount)}입니다.")
         depositor = (depositor or "").strip()[:20]
         if len(depositor) < 2:
             raise ShopError("은행에 표시될 입금자명을 2자 이상 입력해 주세요.")
+        if not self.store.auto_charge_master():
+            raise ShopError("자동충전이 전역에서 비활성화되어 있습니다. 오너에게 문의하세요.")
         if not guild.get("auto_charge"):
             raise ShopError("이 서버는 자동충전이 꺼져 있습니다. 관리자에게 문의하세요.")
         self.require_auto_charge(guild_id)
 
         pending = self.db.create_pending_deposit(
-            guild_id, discord_id, amount, depositor, ttl_hours=self.settings.deposit_ttl_hours
+            guild_id, discord_id, amount, depositor, ttl_hours=self.store.deposit_ttl(guild_id)
         )
         self.db.audit(guild_id, str(discord_id), "deposit.request", f"amount={amount} depositor={depositor} code={pending['code']}")
         return pending
 
     def deposit_guide(self, pending: dict) -> str:
+        bank = self.store.bank()
         return (
             f"**{utils.fmt_won(pending['amount'])}** 입금 요청이 생성되었습니다.\n\n"
-            f"**은행** · {self.settings.bank_name}\n"
-            f"**계좌** · `{self.settings.bank_account}`\n"
-            f"**예금주** · {self.settings.bank_holder}\n"
+            f"**은행** · {bank['name']}\n"
+            f"**계좌** · `{bank['account']}`\n"
+            f"**예금주** · {bank['holder']}\n"
             f"**입금자명** · `{pending['depositor']}`\n"
             f"**메모** · `{pending['code']}` (선택)\n\n"
             f"위 계좌로 **{utils.fmt_won(pending['amount'])}** 을 입금하면 알림 확인 후 자동으로 충전됩니다.\n"
@@ -209,6 +223,10 @@ class ShopService:
         channel: str = "discord",
     ) -> dict:
         guild = self.require_shop(guild_id, for_buy=True)
+        limit = self.store.purchase_max_qty(guild_id)
+        quantity = max(1, int(quantity))
+        if quantity > limit:
+            raise ShopError(f"1회 구매 수량은 최대 {limit}개입니다.")
         plan = self.plan_for(guild_id)
         product = self.db.get_product(product_id, guild_id)
         if product is not None and not plan.allows_delivery(product["delivery_type"]):
@@ -369,7 +387,7 @@ class ShopService:
                 return "상품 코드 없음 (관리자 확인 필요)"
             body = "\n".join(contents)
             message = (
-                f"**{self.settings.brand_name}** · 구매하신 상품이 도착했습니다.\n\n"
+                f"**{self.store.brand()}** · 구매하신 상품이 도착했습니다.\n\n"
                 f"**상품** · {product['name']} × {quantity}\n"
                 f"**주문번호** · #{result['purchase_id']}\n\n"
                 f"```\n{body[:1500]}\n```\n"
@@ -425,9 +443,19 @@ class ShopService:
         products = [product_json(p) for p in self.db.list_products(guild_id, active_only=True)]
         purchases = self.db.list_purchases(guild_id, discord_id, limit=30)
         pending = self.db.list_pending(guild_id, include_all=False)
+        bank = self.store.bank()
         return {
             "plan": plan.payload(),
             "auto_charge_available": plan.auto_charge,
+            "settings": {
+                "min_deposit": self.store.min_deposit(guild_id),
+                "min_deposit_text": utils.fmt_won(self.store.min_deposit(guild_id)),
+                "max_deposit": self.store.max_deposit(guild_id),
+                "max_deposit_text": utils.fmt_won(self.store.max_deposit(guild_id)),
+                "deposit_ttl_hours": self.store.deposit_ttl(guild_id),
+                "purchase_max_qty": self.store.purchase_max_qty(guild_id),
+                "auto_charge_master": self.store.auto_charge_master(),
+            },
             "guild": {
                 "id": guild["id"],
                 "name": guild["name"],
@@ -476,14 +504,10 @@ class ShopService:
                 }
                 for p in pending
             ],
-            "bank": {
-                "name": self.settings.bank_name,
-                "account": self.settings.bank_account,
-                "holder": self.settings.bank_holder,
-            },
-            "brand": self.settings.brand_name,
-            "support_url": self.settings.support_url,
-            "min_deposit": MIN_DEPOSIT,
+            "bank": bank,
+            "brand": self.store.brand(),
+            "support_url": self.store.support_url(),
+            "min_deposit": self.store.min_deposit(guild_id),
         }
 
     def admin_payload(self, guild_id: str | int) -> dict:
@@ -560,11 +584,9 @@ class ShopService:
                 for u in self.db.list_users(guild_id, limit=100)
             ],
             "audit": self.db.list_audit(guild_id, limit=40),
-            "bank": {
-                "name": self.settings.bank_name,
-                "account": self.settings.bank_account,
-                "holder": self.settings.bank_holder,
-            },
+            "bank": self.store.bank(),
+            "settings": self.store.summary(guild_id),
+            "guild_settings": self.store.guild_view(guild_id),
         }
 
     # --------------------------------------------------------------- licenses

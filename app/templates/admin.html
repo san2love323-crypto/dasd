@@ -31,6 +31,7 @@
     <button class="tab-btn" data-tab="users">회원</button>
     <button class="tab-btn" data-tab="settings">설정</button>
     <button class="tab-btn hidden" data-tab="licenses" id="licenseTab">라이센스</button>
+    <button class="tab-btn hidden" data-tab="system" id="systemTab">시스템</button>
   </nav>
 
   <section class="tab-panel" data-tab="dashboard">
@@ -126,6 +127,29 @@
           <input name="admin_role_id" inputmode="numeric" placeholder="예: 123456789012345678">
         </label>
       </div>
+      <div class="card-head" style="margin-top:6px"><h2 class="card-title">입금 · 구매</h2></div>
+      <div class="form-grid">
+        <label>최소 입금(원)
+          <input name="min_deposit" type="number" min="100" placeholder="기본값 사용">
+        </label>
+        <label>최대 입금(원)
+          <input name="max_deposit" type="number" min="1000" placeholder="기본값 사용">
+        </label>
+        <label>요청 만료(시간)
+          <input name="deposit_ttl_hours" type="number" min="1" max="72" placeholder="기본값 사용">
+        </label>
+        <label>1회 구매 수량
+          <input name="purchase_max_qty" type="number" min="1" max="20" placeholder="기본값 사용">
+        </label>
+      </div>
+      <p class="muted small-text">
+        빈 칸은 오너가 정한 기본값을 따릅니다.
+        <button type="button" class="ghost-btn small" id="resetGuildSettings">전부 기본값으로</button>
+      </p>
+      <div class="bank-box">
+        <div class="bank-line"><span>입금 계좌</span><strong id="adminBank">-</strong></div>
+        <p class="muted small-text">계좌는 오너만 바꿀 수 있습니다. (웹 패널 → 시스템 탭)</p>
+      </div>
       <div class="switch-row">
         <label class="switch"><input type="checkbox" name="auto_charge"><span class="track"></span><span>자동충전</span></label>
         <label class="switch"><input type="checkbox" name="buy_enabled"><span class="track"></span><span>구매 활성화</span></label>
@@ -168,6 +192,54 @@
       </div>
       <div class="empty hidden" id="licenseEmpty">발급된 라이센스가 없습니다.</div>
     </div>
+  </section>
+
+  <section class="tab-panel hidden" data-tab="system">
+    <form class="card stack-form" id="systemForm" autocomplete="off">
+      <div class="card-head">
+        <h2 class="card-title">시스템 설정</h2>
+        <span class="chip chip-gold">OWNER ONLY</span>
+      </div>
+      <p class="muted small-text">여기서 바꾼 값은 모든 서버의 기본값이 됩니다. 서버별 재정의는 [설정] 탭에서 합니다.</p>
+
+      <div class="form-grid">
+        <label>브랜드명<input name="brand_name" maxlength="40" placeholder="VENDRIX"></label>
+        <label>문의 URL<input name="support_url" maxlength="300" placeholder="https://..."></label>
+      </div>
+      <label>배너 이미지 URL<input name="banner_url" maxlength="500" placeholder="비우면 기본 배너 사용"></label>
+
+      <div class="card-head" style="margin-top:6px"><h2 class="card-title">입금 계좌</h2></div>
+      <div class="form-grid">
+        <label>은행<input name="bank_name" maxlength="40"></label>
+        <label>계좌번호<input name="bank_account" maxlength="60"></label>
+        <label>예금주<input name="bank_holder" maxlength="40"></label>
+      </div>
+
+      <div class="card-head" style="margin-top:6px"><h2 class="card-title">기본 한도</h2></div>
+      <div class="form-grid">
+        <label>최소 입금(원)<input name="min_deposit" type="number" min="100"></label>
+        <label>최대 입금(원)<input name="max_deposit" type="number" min="1000"></label>
+        <label>요청 만료(시간)<input name="deposit_ttl_hours" type="number" min="1" max="72"></label>
+        <label>1회 구매 수량<input name="purchase_max_qty" type="number" min="1" max="20"></label>
+      </div>
+
+      <div class="switch-row">
+        <label class="switch"><input type="checkbox" name="auto_charge_master"><span class="track"></span><span>자동충전 마스터</span></label>
+        <label class="switch"><input type="checkbox" name="license_enforce"><span class="track"></span><span>라이센스 강제</span></label>
+      </div>
+
+      <div class="card-head" style="margin-top:6px"><h2 class="card-title">자동충전 알림</h2><span class="chip" id="pbState">-</span></div>
+      <label>Pushbullet 토큰
+        <input name="pushbullet_token" type="password" autocomplete="new-password" placeholder="변경할 때만 입력">
+      </label>
+      <p class="muted small-text" id="pbHint">토큰을 저장하면 리스너가 즉시 재시작됩니다.</p>
+      <div class="form-grid">
+        <label>허용 앱 패키지<input name="pushbullet_allowed_packages" placeholder="com.kbstar.kbbank,..."></label>
+        <label>차단 앱 패키지<input name="pushbullet_blocked_packages" placeholder="com.pushbullet.android,..."></label>
+      </div>
+
+      <button class="primary-btn" type="submit">시스템 설정 저장</button>
+    </form>
   </section>
 
   <footer class="footer">

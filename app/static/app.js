@@ -155,6 +155,15 @@
     setText('#bankName', payload.bank.name);
     setText('#bankAccount', payload.bank.account);
     setText('#bankHolder', payload.bank.holder);
+    const cfg = payload.settings || {};
+    const amountInput = document.querySelector('#depositForm input[name="amount"]');
+    if (amountInput && cfg.min_deposit) {
+      amountInput.placeholder = `예: ${Number(cfg.min_deposit).toLocaleString('ko-KR')} ~ ${Number(cfg.max_deposit).toLocaleString('ko-KR')}`;
+    }
+    const guide = $('#depositRange');
+    if (guide && cfg.min_deposit) {
+      guide.textContent = `1회 ${Number(cfg.min_deposit).toLocaleString('ko-KR')}원 ~ ${Number(cfg.max_deposit).toLocaleString('ko-KR')}원 · 요청 ${cfg.deposit_ttl_hours}시간 유지`;
+    }
     setText('#productCount', `${payload.products.length}개 상품`);
 
     const adminLink = $('#adminLink');
@@ -286,7 +295,13 @@
         const data = new FormData(depositForm);
         const amount = toAmount(data.get('amount'));
         const depositor = String(data.get('depositor') || '').trim();
-        if (amount < 100) return toast('입금 금액은 100원 이상이어야 합니다.', 'error');
+        const cfg = (shop && shop.settings) || {};
+        if (cfg.min_deposit && amount < cfg.min_deposit) {
+          return toast(`최소 입금 금액은 ${Number(cfg.min_deposit).toLocaleString('ko-KR')}원입니다.`, 'error');
+        }
+        if (cfg.max_deposit && amount > cfg.max_deposit) {
+          return toast(`1회 입금 한도는 ${Number(cfg.max_deposit).toLocaleString('ko-KR')}원입니다.`, 'error');
+        }
         if (depositor.length < 2) return toast('입금자명을 2자 이상 입력해 주세요.', 'error');
         const button = depositForm.querySelector('button[type="submit"]');
         busy = true;
@@ -418,12 +433,14 @@
     if (!admin) return;
     setText('#adminGuild', admin.guild.name || admin.guild.id);
     if (owner) {
-      const tab = $('#licenseTab');
-      if (tab) tab.classList.remove('hidden');
+      const licenseTab = $('#licenseTab');
+      if (licenseTab) licenseTab.classList.remove('hidden');
+      const systemTab = $('#systemTab');
+      if (systemTab) systemTab.classList.remove('hidden');
     }
     renderAdmin();
     bindAdminActions();
-    const tabs = ['dashboard', 'products', 'deposits', 'users', 'settings', 'licenses'];
+    const tabs = ['dashboard', 'products', 'deposits', 'users', 'settings', 'licenses', 'system'];
     const hash = (window.location.hash || '').replace('#', '');
     setTab(tabs.includes(hash) ? hash : 'dashboard');
     window.addEventListener('hashchange', () => {
@@ -441,6 +458,7 @@
     renderUsers();
     renderSettings();
     if (owner) loadLicenses();
+    if (owner) loadSystemSettings().catch(() => {});
   }
 
   function renderAdminHeader() {
@@ -584,6 +602,47 @@
     form.admin_role_id.value = admin.guild.admin_role_id || '';
     form.auto_charge.checked = Boolean(admin.guild.auto_charge);
     form.buy_enabled.checked = Boolean(admin.guild.buy_enabled);
+
+    const limits = admin.guild_settings || {};
+    ['min_deposit', 'max_deposit', 'deposit_ttl_hours', 'purchase_max_qty'].forEach((key) => {
+      const field = form.elements[key];
+      if (!field) return;
+      const entry = limits[key] || {};
+      field.value = entry.override ? entry.value : '';
+      field.placeholder = entry.override ? '' : `기본값 ${entry.value ?? ''}`;
+    });
+
+    const bank = admin.settings ? admin.settings.bank : admin.bank;
+    if (bank) setText('#adminBank', `${bank.name} ${bank.account} (${bank.holder})`);
+  }
+
+  async function loadSystemSettings() {
+    if (!owner) return;
+    const data = await api('/api/owner/settings');
+    const form = $('#systemForm');
+    if (!form) return;
+    const values = data.settings || {};
+    ['brand_name', 'bank_name', 'bank_account', 'bank_holder', 'support_url', 'banner_url'].forEach((key) => {
+      if (form.elements[key]) form.elements[key].value = values[key] || '';
+    });
+    ['min_deposit', 'max_deposit', 'deposit_ttl_hours', 'purchase_max_qty'].forEach((key) => {
+      if (form.elements[key]) form.elements[key].value = values[key] ?? '';
+    });
+    form.auto_charge_master.checked = Boolean(values.auto_charge_master);
+    form.license_enforce.checked = Boolean(values.license_enforce);
+    form.pushbullet_allowed_packages.value = (values.pushbullet_allowed_packages || []).join(',');
+    form.pushbullet_blocked_packages.value = (values.pushbullet_blocked_packages || []).join(',');
+    const token = values.pushbullet_token || {};
+    form.pushbullet_token.value = '';
+    form.pushbullet_token.placeholder = token.configured ? `저장됨 ${token.hint} · 변경 시 입력` : 'o.xxxxxxxx (미설정)';
+    const state = $('#pbState');
+    if (state) {
+      const connected = data.pushbullet && data.pushbullet.connected;
+      state.textContent = connected ? '연결됨' : token.configured ? '대기 중' : '미설정';
+      state.className = `chip ${connected ? 'chip-green' : token.configured ? 'chip-orange' : 'chip-gray'}`;
+    }
+    const hint = $('#pbHint');
+    if (hint) hint.textContent = token.configured ? '토큰을 비워두면 기존 값이 유지됩니다.' : 'Pushbullet 액세스 토큰을 입력하세요.';
   }
 
   function setTab(name) {
@@ -592,6 +651,7 @@
     $$('.tab-panel').forEach((panel) => panel.classList.toggle('hidden', panel.getAttribute('data-tab') !== name));
     if (window.location.hash !== `#${name}`) history.replaceState(null, '', `#${name}`);
     if (name === 'licenses' && owner) loadLicenses();
+    if (name === 'system' && owner) loadSystemSettings().catch((error) => toast(error.message, 'error'));
   }
 
   function bindAdminActions() {
@@ -687,9 +747,55 @@
           auto_charge: settingsForm.auto_charge.checked,
           buy_enabled: settingsForm.buy_enabled.checked,
         };
+        ['min_deposit', 'max_deposit', 'deposit_ttl_hours', 'purchase_max_qty'].forEach((key) => {
+          const raw = String(data.get(key) || '').trim();
+          body[key] = raw === '' ? null : Number(raw);
+        });
         await withBusy(settingsForm.querySelector('button[type="submit"]'), async () => {
           await api('/api/admin/settings', { method: 'POST', body });
           toast('설정을 저장했습니다.', 'success');
+          await refreshAdmin();
+        });
+      });
+    }
+
+    const resetGuild = $('#resetGuildSettings');
+    if (resetGuild) {
+      resetGuild.addEventListener('click', () => {
+        ['min_deposit', 'max_deposit', 'deposit_ttl_hours', 'purchase_max_qty'].forEach((key) => {
+          if (settingsForm.elements[key]) settingsForm.elements[key].value = '';
+        });
+        toast('칸을 비웠습니다. [설정 저장]을 누르면 기본값으로 돌아갑니다.');
+      });
+    }
+
+    const systemForm = $('#systemForm');
+    if (systemForm) {
+      systemForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const data = new FormData(systemForm);
+        const body = {
+          brand_name: String(data.get('brand_name') || '').trim(),
+          support_url: String(data.get('support_url') || '').trim(),
+          banner_url: String(data.get('banner_url') || '').trim(),
+          bank_name: String(data.get('bank_name') || '').trim(),
+          bank_account: String(data.get('bank_account') || '').trim(),
+          bank_holder: String(data.get('bank_holder') || '').trim(),
+          min_deposit: Number(data.get('min_deposit') || 0),
+          max_deposit: Number(data.get('max_deposit') || 0),
+          deposit_ttl_hours: Number(data.get('deposit_ttl_hours') || 0),
+          purchase_max_qty: Number(data.get('purchase_max_qty') || 0),
+          auto_charge_master: systemForm.auto_charge_master.checked,
+          license_enforce: systemForm.license_enforce.checked,
+          pushbullet_allowed_packages: String(data.get('pushbullet_allowed_packages') || ''),
+          pushbullet_blocked_packages: String(data.get('pushbullet_blocked_packages') || ''),
+        };
+        const token = String(data.get('pushbullet_token') || '').trim();
+        if (token) body.pushbullet_token = { value: token };
+        await withBusy(systemForm.querySelector('button[type="submit"]'), async () => {
+          await api('/api/owner/settings', { method: 'POST', body });
+          toast('시스템 설정을 저장했습니다.', 'success');
+          await loadSystemSettings();
           await refreshAdmin();
         });
       });

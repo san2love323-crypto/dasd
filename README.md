@@ -45,9 +45,9 @@ source .venv/bin/activate
 pip install -r requirements.txt
 
 cp .env.example .env
-nano .env                      # 아래 4개는 필수
-python run.py --check          # 설정 점검
-python run.py
+nano .env                      # 아래 3개는 필수
+python main.py --check          # 설정 점검
+python main.py
 ```
 
 `start.sh` 를 사용하면 위 과정(가상환경 생성·의존성 설치·`.env` 복사)을 자동으로 처리합니다.
@@ -64,7 +64,7 @@ cd vendrix
 start.bat
 ```
 
-`start.bat` 은 `.venv` 생성 → 의존성 설치 → `.env` 복사 → `python run.py` 순으로 실행합니다.
+`start.bat` 은 `.venv` 생성 → 의존성 설치 → `.env` 복사 → `python main.py` 순으로 실행합니다.
 수동으로 하려면:
 
 ```bat
@@ -73,7 +73,7 @@ python -m venv .venv
 pip install -r requirements.txt
 copy .env.example .env
 notepad .env
-python run.py
+python main.py
 ```
 
 ### 필수 환경 변수
@@ -83,9 +83,28 @@ python run.py
 | `DISCORD_TOKEN` | 디스코드 봇 토큰 |
 | `OWNER_IDS` | 오너 디스코드 유저 ID (콤마 구분). 라이센스 발급/폐기 권한 |
 | `PUBLIC_BASE_URL` | 배너 이미지·웹 로그인 링크에 쓰이는 외부 주소 (예: `https://panel.example.com`) |
-| `PUSHBULLET_TOKEN` | 자동충전 사용 시 Pushbullet Access Token |
 
-나머지 항목은 `.env.example` 주석을 참고하세요. `python run.py --check` 로 누락 여부를 확인할 수 있습니다.
+`DB_PATH`·`WEB_HOST`·`WEB_PORT`·`COOKIE_SECURE` 같은 실행 환경 값만 `.env` 에 두면 됩니다.
+`python main.py --check` 로 누락 여부를 확인할 수 있습니다.
+
+### 자판기 설정은 `.env` 가 아니라 패널/명령어에서
+
+브랜드명·배너·입금 계좌·입금 한도·구매 수량·자동충전 마스터·Pushbullet 토큰·알림 앱 패키지 같은
+**운영 설정은 SQLite `settings` 테이블**에 저장됩니다. 우선순위는 아래와 같습니다.
+
+1. 서버별 값 (`/설정` 또는 관리자 → **설정** 탭) — 해당 서버에만 적용
+2. 전역 값 (오너 → **시스템** 탭) — 모든 서버 기본값
+3. `.env` 값 — 최초 부팅 시 전역 기본값을 채우는 용도로만 사용
+
+즉 `.env` 는 부트스트랩이고, 이후 값은 웹 패널이나 `/설정` 으로 바꾸면 **재시작 없이 즉시** 반영됩니다.
+Pushbullet 토큰을 바꾸면 리스너가 자동으로 재접속합니다.
+
+```bash
+python main.py                  # 봇 + 웹 + 자동충전
+python main.py --web-only       # 웹 패널만 (봇 토큰 없이 UI 확인)
+python main.py --host 0.0.0.0 --port 8080
+python main.py --check          # 설정/의존성 점검만
+```
 
 ---
 
@@ -140,17 +159,26 @@ python run.py
 3. 안드로이드 설정 → **알림 접근 권한(Notification access)** 에서 Pushbullet 허용
 4. 배터리 최적화 예외에 Pushbullet 추가 (삼성: 설정 → 배터리 → 백그라운드 사용 제한 → 예외)
 5. 은행 앱의 **입금 알림**이 실제로 뜨는지 확인 (은행 앱 알림 설정에서 입금 알림 허용)
-6. Pushbullet 웹 → [Settings → Account](https://www.pushbullet.com/#settings/account) → **Create Access Token** → `.env` 의 `PUSHBULLET_TOKEN`
+6. Pushbullet 웹 → [Settings → Account](https://www.pushbullet.com/#settings/account) → **Create Access Token** → 웹 패널 **시스템** 탭의 *Pushbullet 토큰* 에 입력 후 저장 (저장 즉시 재접속)
 
 ### 4-2. 서버 설정
 
-```env
-PUSHBULLET_TOKEN=o.xxxxxxxxxxxxxxxxxxxxxxxx
-AUTO_CHARGE_ENABLED=true
-DEPOSIT_TTL_HOURS=6
+오너 계정으로 웹 패널 → **시스템** 탭에서 아래 값을 입력하고 **시스템 설정 저장** 을 누르세요.
+토큰을 저장하면 리스너가 자동으로 재연결되며, 봇을 재시작할 필요가 없습니다.
 
-# 특정 은행/문자 앱만 처리하려면 패키지명을 지정 (선택)
-# PUSHBULLET_ALLOWED_PACKAGES=com.kbstar.kbbank,com.shinhan.sbanking
+| 항목 | 설명 |
+| --- | --- |
+| Pushbullet 토큰 | `o.` 로 시작하는 Access Token |
+| 허용 앱 패키지 | 비우면 입금 키워드로만 판별. 특정 은행만 쓰려면 `com.kbstar.kbbank,com.shinhan.sbanking` |
+| 차단 앱 패키지 | 기본 `com.pushbullet.android,com.android.systemui` |
+| 자동충전 마스터 | 전체 서버 자동충전 ON/OFF |
+
+`.env` 의 `PUSHBULLET_TOKEN`·`PUSHBULLET_ALLOWED_PACKAGES`·`PUSHBULLET_BLOCKED_PACKAGES`·`AUTO_CHARGE_ENABLED` 는
+**최초 부팅 시 전역 기본값**을 채우는 용도입니다. 이후에는 패널/`/설정` 값이 우선합니다.
+
+```env
+# .env 는 부트스트랩만 (선택)
+PUSHBULLET_TOKEN=o.xxxxxxxxxxxxxxxxxxxxxxxx
 PUSHBULLET_BLOCKED_PACKAGES=com.pushbullet.android,com.android.systemui
 ```
 
@@ -198,6 +226,14 @@ PUSHBULLET_BLOCKED_PACKAGES=com.pushbullet.android,com.android.systemui
 | `/구매 상품 수량` | 잔액으로 상품 구매 | 전체 |
 | `/공지 공지 이벤트` | 패널 공지/이벤트 문구 수정 | 서버 관리자 |
 | `/플랜` | 현재 서버 플랜과 등급별 기능 제한 확인 | 전체 |
+| `/설정 보기` | 현재 서버에 적용 중인 설정과 출처(서버/전역) 확인 | 서버 관리자 |
+| `/설정 계좌 은행 계좌번호 예금주` | 입금 계좌 변경 | 서버 관리자 |
+| `/설정 입금 최소 최대 만료시간` | 입금 한도·요청 만료 시간 변경 | 서버 관리자 |
+| `/설정 구매수량 수량` | 1회 구매 수량 제한 변경 | 서버 관리자 |
+| `/설정 자동충전 켜기/끄기` | 서버 자동충전 스위치 | 서버 관리자 |
+| `/설정 구매 켜기/끄기` | 서버 구매 스위치 | 서버 관리자 |
+| `/설정 웹` | 웹 패널 1회용 로그인 링크 발급 | 서버 관리자 |
+| `/설정 초기화 항목` | 서버 값을 지우고 전역 기본값으로 되돌림 | 서버 관리자 |
 | `/라이센스 발급 수량 기간 플랜 메모` | 라이센스 키 발급 (플랜: basic/standard/premium/platinum) | **오너 전용** |
 | `/라이센스 목록` | 최근 발급 키 확인 | **오너 전용** |
 | `/라이센스 폐기 키` | 키 폐기 | **오너 전용** |
@@ -214,8 +250,14 @@ PUSHBULLET_BLOCKED_PACKAGES=com.pushbullet.android,com.android.systemui
 
 - 디스코드에서 `/웹패널` → 15분간 유효한 1회용 링크 → 로그인 쿠키 7일
 - 사용자: 잔액, 상품 구매, 입금 요청, 구매 내역, 문의
-- 관리자: 대시보드, 상품/재고 CRUD, 입금 승인·무시, 회원 충전, 재전송, 공지/이벤트/계좌 설정
-- 오너: **라이센스 탭**에서 키 발급/폐기/현황 확인 (봇 명령어와 동일 권한)
+- 관리자: 대시보드, 상품/재고 CRUD, 입금 승인·무시, 회원 충전, 재전송, 공지/이벤트
+- **설정 탭**: 서버별 계좌·한도·자동충전/구매 스위치 (전역 값과 다르면 `서버 설정` 배지 표시)
+- 오너 **시스템 탭**: 브랜드명·배너·전역 계좌·기본 한도·자동충전 마스터·라이센스 강제·Pushbullet 토큰/앱 패키지
+- 오너 **라이센스 탭**: 키 발급/폐기/현황 확인 (봇 명령어와 동일 권한)
+
+![서버 설정 탭](docs/admin-settings.png)
+
+![오너 시스템 탭](docs/admin-system.png)
 
 ![오너 라이센스 콘솔](docs/admin-license.png)
 
@@ -239,7 +281,7 @@ Type=simple
 User=vendrix
 WorkingDirectory=/opt/vendrix
 EnvironmentFile=/opt/vendrix/.env
-ExecStart=/opt/vendrix/.venv/bin/python run.py
+ExecStart=/opt/vendrix/.venv/bin/python main.py
 Restart=always
 RestartSec=5
 
@@ -282,7 +324,9 @@ python -m pytest -q tests/
 - `test_flow.py` — 구매·충전·선물·자동충전·중복·라이센스 차단
 - `test_pushbullet.py` — 미러링 알림 수신 → 자동 충전, 중복/일반 알림 무시, SMS 경로
 - `test_commands.py` — 슬래시 명령어 등록/직렬화
-- `test_web.py` — 웹 로그인·구매·입금 API
+- `test_web.py` — 웹 로그인·구매·입금 API, 설정 저장/서버 오버라이드
+- `test_plans.py` — 플랜별 상품·코드·자동충전 제한
+- `test_settings.py` — 전역/서버 설정 우선순위·초기화·토큰 마스킹
 
 디자인만 빠르게 확인하려면 샘플 데이터로 웹 패널만 실행할 수 있습니다.
 
@@ -297,9 +341,11 @@ python tools/demo_panel.py --port 8099
 
 ```
 vendrix/
-├── run.py                 # 봇 + 웹 + Pushbullet 동시 실행
+├── main.py                # 단일 실행 파일 (봇 + 웹 + Pushbullet)
 ├── app/
-│   ├── config.py          # .env 설정
+│   ├── config.py          # .env(실행 환경) 설정
+│   ├── settings_store.py  # DB 기반 운영 설정(전역/서버) + 마스킹
+│   ├── plans.py           # 플랜 등급·기능 제한
 │   ├── db.py              # SQLite (WAL, 트랜잭션)
 │   ├── schema.sql
 │   ├── deposits.py        # 입금 파서 + 자동 매칭
@@ -325,7 +371,7 @@ vendrix/
 | 디스코드 패널에 배너가 안 보임 | `PUBLIC_BASE_URL` 이 외부에서 접근 가능한 주소인지, `/static/banner.png` 가 열리는지 확인 |
 | 슬래시 명령어가 안 보임 | `GUILD_ID` 설정 후 재시작, 봇 재초대(`applications.commands`), Discord 재로그인 |
 | 상품 코드 DM이 안 옴 | 구매자가 DM 허용, 봇과 서버에 `Send Messages` 권한, 실패 시 관리자 로그 채널로 코드 전송 |
-| 자동 충전이 안 됨 | ① 폰 알림 미러링/알림 접근 권한 ② `PUSHBULLET_TOKEN` ③ 서버 `auto_charge` ON ④ 라이센스 유효 ⑤ 입금자명/금액 일치 |
+| 자동 충전이 안 됨 | ① 폰 알림 미러링/알림 접근 권한 ② 오너 **시스템** 탭의 Pushbullet 토큰 ③ 서버 `auto_charge` ON ④ 라이센스 유효 ⑤ 입금자명/금액 일치 |
 | `review` 로만 쌓임 | 동일 금액 요청이 여러 건이거나 이름이 다름 → 웹 **입금** 탭에서 승인 |
 | 웹 로그인 링크 만료 | `/웹패널` 다시 실행 (링크는 1회용·15분) |
 | `database is locked` | 앱은 단일 프로세스로 실행하세요. 여러 인스턴스를 띄우지 마세요. |

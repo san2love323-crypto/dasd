@@ -27,6 +27,10 @@ def test_command_registration(tmp_path):
     subcommands = {command.name for command in license_group.commands}
     assert {"발급", "목록", "폐기", "정보"} == subcommands
 
+    settings_group = next(command for command in bot.tree.get_commands() if command.name == "설정")
+    setting_commands = {command.name for command in settings_group.commands}
+    assert {"보기", "계좌", "입금", "구매수량", "자동충전", "구매", "초기화", "웹"} == setting_commands
+
     for command in bot.tree.get_commands():
         payload = command.to_dict(bot.tree)
         assert payload["name"]

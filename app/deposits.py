@@ -235,9 +235,9 @@ def score_candidate(parsed: ParsedDeposit, pending: dict) -> int:
 
 
 class DepositProcessor:
-    def __init__(self, db: Database, settings, notifier: Any | None = None):
+    def __init__(self, db: Database, store, notifier: Any | None = None):
         self.db = db
-        self.settings = settings
+        self.store = store
         self.notifier = notifier
         self.log = log
 
@@ -248,9 +248,10 @@ class DepositProcessor:
         if push.get("dismissed"):
             return False
         package = (push.get("package_name") or "").strip()
-        if package and package in self.settings.pushbullet_blocked_packages:
+        if package and package in self.store.blocked_packages():
             return False
-        if self.settings.pushbullet_allowed_packages and package not in self.settings.pushbullet_allowed_packages:
+        allowed = self.store.allowed_packages()
+        if allowed and package not in allowed:
             return False
         return True
 
@@ -333,13 +334,13 @@ class DepositProcessor:
             return outcome
 
         guild = self.db.get_guild(pending["guild_id"])
-        if not self.settings.auto_charge_enabled:
+        if not self.store.auto_charge_master():
             outcome.status = "review"
             outcome.message = "자동충전 마스터 스위치가 꺼져 있습니다."
         elif guild is None or not int(guild.get("auto_charge") or 0):
             outcome.status = "review"
             outcome.message = "서버의 자동충전이 꺼져 있습니다."
-        elif self.settings.license_enforce and not self.db.license_valid(guild):
+        elif self.store.license_enforce() and not self.db.license_valid(guild):
             outcome.status = "review"
             outcome.message = "서버 라이센스가 만료되어 자동충전이 보류되었습니다."
         else:

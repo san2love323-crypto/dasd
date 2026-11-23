@@ -13,6 +13,7 @@ from .config import Settings
 from .db import Database
 from .deposits import MatchOutcome
 from .plans import plan_choices, resolve_plan
+from .settings_store import SettingsError
 from .service import PURPLE, ShopError, ShopService
 
 log = logging.getLogger("vendrix.bot")
@@ -28,8 +29,8 @@ def logo_url(settings: Settings) -> str:
     return f"{settings.base_url}/static/logo.png"
 
 
-def banner_url(settings: Settings) -> str:
-    return settings.banner_url or f"{settings.base_url}/static/banner.png"
+def banner_url(bot: "WiaBot") -> str:
+    return bot.service.store.banner()
 
 
 def panel_embed(bot: "WiaBot", guild_row: dict) -> discord.Embed:
@@ -47,11 +48,13 @@ def panel_embed(bot: "WiaBot", guild_row: dict) -> discord.Embed:
         ),
         color=BRAND_COLOR,
     )
-    embed.set_author(name=f"{settings.brand_name}  |  {guild_row.get('name') or ''}", icon_url=logo_url(settings))
-    embed.set_image(url=banner_url(settings))
+    embed.set_author(
+        name=f"{bot.service.store.brand()}  |  {guild_row.get('name') or ''}", icon_url=logo_url(settings)
+    )
+    embed.set_image(url=banner_url(bot))
     plan = bot.service.plan_for(guild_row["id"])
     embed.set_footer(
-        text=f"{settings.brand_name}™ · {plan.name} | {utils.fmt_dt(utils.now())} | 상품 {len(products)}개"
+        text=f"{bot.service.store.brand()}™ · {plan.name} | {utils.fmt_dt(utils.now())} | 상품 {len(products)}개"
     )
     return embed
 
@@ -81,8 +84,9 @@ class QuantityModal(discord.ui.Modal, title="구매 수량 선택"):
         except ValueError:
             await interaction.response.send_message("수량은 숫자로 입력해 주세요.", ephemeral=True)
             return
-        if not 1 <= quantity <= 10:
-            await interaction.response.send_message("수량은 1~10 사이로 입력해 주세요.", ephemeral=True)
+        limit = self.bot.service.store.purchase_max_qty(interaction.guild_id)
+        if not 1 <= quantity <= limit:
+            await interaction.response.send_message(f"수량은 1~{limit} 사이로 입력해 주세요.", ephemeral=True)
             return
 
         await interaction.response.defer(ephemeral=True)
@@ -458,7 +462,7 @@ class ShopPanelView(discord.ui.View):
 
     @discord.ui.button(label="문의하기", emoji="💬", style=discord.ButtonStyle.secondary, custom_id="vdx:panel:support")
     async def support(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
-        url = self.bot.settings.support_url
+        url = self.bot.service.store.support_url()
         if url:
             view = discord.ui.View()
             view.add_item(discord.ui.Button(label="문의 열기", url=url, style=discord.ButtonStyle.link))
@@ -536,7 +540,7 @@ class DiscordNotifier:
             f"입금 금액: {utils.fmt_won(outcome.amount)}\n"
             f"입금자명: {outcome.depositor or '-'}\n"
             f"현재 잔액: {utils.fmt_won(outcome.balance)}\n\n"
-            f"{self.settings.brand_name} 이용해 주셔서 감사합니다.",
+            f"{self.bot.service.store.brand()} 이용해 주셔서 감사합니다.",
         )
         embed = base_embed(
             "자동 충전 완료",
@@ -810,7 +814,7 @@ def register_commands(bot: WiaBot) -> None:
         interaction: discord.Interaction,
         상품: str,
         대상: discord.Member,
-        수량: app_commands.Range[int, 1, 10] = 1,
+        수량: app_commands.Range[int, 1, 20] = 1,
     ) -> None:
         if not str(상품).isdigit():
             await interaction.response.send_message("상품을 목록에서 선택해 주세요.", ephemeral=True)
@@ -872,7 +876,7 @@ def register_commands(bot: WiaBot) -> None:
     @app_commands.describe(금액="입금할 금액", 입금자명="은행에 표시될 이름")
     async def deposit_command(
         interaction: discord.Interaction,
-        금액: app_commands.Range[int, 100, 10_000_000],
+        금액: app_commands.Range[int, 100, 50_000_000],
         입금자명: str,
     ) -> None:
         await interaction.response.defer(ephemeral=True)
@@ -960,6 +964,180 @@ def register_commands(bot: WiaBot) -> None:
         embed.set_footer(text=f"현재 플랜: {current.name} · 자동충전은 스탠다드부터 사용할 수 있습니다.")
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
+    # ------------------------------------------------------------------ /설정
+    settings_group = app_commands.Group(name="설정", description="자판기 설정을 확인하고 변경합니다.")
+
+    @settings_group.command(name="보기", description="현재 적용 중인 자판기 설정을 확인합니다.")
+    @app_commands.check(admin_predicate)
+    async def settings_show(interaction: discord.Interaction) -> None:
+        if interaction.guild is None:
+            await interaction.response.send_message("서버에서만 사용할 수 있습니다.", ephemeral=True)
+            return
+        store = bot.service.store
+        plan = bot.service.plan_for(interaction.guild_id)
+        guild = db.get_guild(interaction.guild_id) or {}
+        embed = base_embed(
+            "자판기 설정",
+            store.describe(interaction.guild_id)
+            + f"\n**플랜** · {plan.name}\n"
+            + f"**서버 자동충전** · {'켜짐' if guild.get('auto_charge') else '꺼짐'}"
+            + f" · **구매** · {'켜짐' if guild.get('buy_enabled') else '꺼짐'}",
+        )
+        embed.set_footer(text="웹 패널의 설정 탭에서도 동일하게 변경할 수 있습니다.")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @settings_group.command(name="계좌", description="입금받을 계좌를 변경합니다. (오너 전용)")
+    @app_commands.describe(은행="은행 이름", 계좌="계좌번호", 예금주="예금주명")
+    @app_commands.check(owner_predicate)
+    async def settings_bank(
+        interaction: discord.Interaction,
+        은행: str | None = None,
+        계좌: str | None = None,
+        예금주: str | None = None,
+    ) -> None:
+        if not any((은행, 계좌, 예금주)):
+            await interaction.response.send_message("은행/계좌/예금주 중 하나 이상 입력해 주세요.", ephemeral=True)
+            return
+        store = bot.service.store
+        try:
+            if 은행 is not None:
+                store.set_global("bank_name", 은행, actor=str(interaction.user.id))
+            if 계좌 is not None:
+                store.set_global("bank_account", 계좌, actor=str(interaction.user.id))
+            if 예금주 is not None:
+                store.set_global("bank_holder", 예금주, actor=str(interaction.user.id))
+        except SettingsError as exc:
+            await interaction.response.send_message(f"❌ {exc}", ephemeral=True)
+            return
+        bank = store.bank()
+        await interaction.response.send_message(
+            f"✅ 계좌가 변경되었습니다.\n**{bank['name']}** `{bank['account']}` · 예금주 {bank['holder']}",
+            ephemeral=True,
+        )
+
+    @settings_group.command(name="입금", description="입금 한도와 요청 만료 시간을 변경합니다.")
+    @app_commands.describe(최소="최소 입금액(원)", 최대="최대 입금액(원)", 만료="요청 유효 시간(시간)")
+    @app_commands.check(admin_predicate)
+    async def settings_deposit(
+        interaction: discord.Interaction,
+        최소: app_commands.Range[int, 100, 1_000_000] | None = None,
+        최대: app_commands.Range[int, 1_000, 50_000_000] | None = None,
+        만료: app_commands.Range[int, 1, 72] | None = None,
+    ) -> None:
+        if 최소 is None and 최대 is None and 만료 is None:
+            await interaction.response.send_message("최소/최대/만료 중 하나 이상 입력해 주세요.", ephemeral=True)
+            return
+        store = bot.service.store
+        guild_id = interaction.guild_id
+        try:
+            if 최소 is not None:
+                store.set_guild(guild_id, "min_deposit", int(최소), actor=str(interaction.user.id))
+            if 최대 is not None:
+                store.set_guild(guild_id, "max_deposit", int(최대), actor=str(interaction.user.id))
+            if 만료 is not None:
+                store.set_guild(guild_id, "deposit_ttl_hours", int(만료), actor=str(interaction.user.id))
+        except SettingsError as exc:
+            await interaction.response.send_message(f"❌ {exc}", ephemeral=True)
+            return
+        if store.min_deposit(guild_id) > store.max_deposit(guild_id):
+            await interaction.response.send_message("❌ 최소 입금이 최대 입금보다 클 수 없습니다.", ephemeral=True)
+            return
+        await interaction.response.send_message(
+            f"✅ 입금 설정이 변경되었습니다.\n"
+            f"범위 **{utils.fmt_won(store.min_deposit(guild_id))} ~ {utils.fmt_won(store.max_deposit(guild_id))}**"
+            f" · 요청 **{store.deposit_ttl(guild_id)}시간** 유지",
+            ephemeral=True,
+        )
+
+    @settings_group.command(name="구매수량", description="1회 최대 구매 수량을 변경합니다.")
+    @app_commands.describe(수량="1~20 사이 값")
+    @app_commands.check(admin_predicate)
+    async def settings_quantity(
+        interaction: discord.Interaction, 수량: app_commands.Range[int, 1, 20]
+    ) -> None:
+        try:
+            bot.service.store.set_guild(
+                interaction.guild_id, "purchase_max_qty", int(수량), actor=str(interaction.user.id)
+            )
+        except SettingsError as exc:
+            await interaction.response.send_message(f"❌ {exc}", ephemeral=True)
+            return
+        await interaction.response.send_message(f"✅ 1회 최대 구매 수량을 **{수량}개**로 설정했습니다.", ephemeral=True)
+
+    @settings_group.command(name="자동충전", description="이 서버의 자동충전 사용 여부를 변경합니다.")
+    @app_commands.describe(상태="켜기 또는 끄기")
+    @app_commands.choices(
+        상태=[
+            app_commands.Choice(name="켜기", value="on"),
+            app_commands.Choice(name="끄기", value="off"),
+        ]
+    )
+    @app_commands.check(admin_predicate)
+    async def settings_auto(interaction: discord.Interaction, 상태: app_commands.Choice[str]) -> None:
+        enabled = 1 if 상태.value == "on" else 0
+        if enabled:
+            plan = bot.service.plan_for(interaction.guild_id)
+            if not plan.auto_charge:
+                await interaction.response.send_message(
+                    f"❌ {plan.name} 플랜에서는 자동충전을 켤 수 없습니다. (스탠다드부터)", ephemeral=True
+                )
+                return
+            if not bot.service.store.auto_charge_master():
+                await interaction.response.send_message(
+                    "❌ 전역 자동충전 마스터가 꺼져 있습니다. 오너에게 요청하세요.", ephemeral=True
+                )
+                return
+        db.update_guild(interaction.guild_id, auto_charge=enabled)
+        db.audit(interaction.guild_id, str(interaction.user.id), "settings.auto_charge", str(enabled))
+        await interaction.response.send_message(
+            f"✅ 자동충전을 **{'켜짐' if enabled else '꺼짐'}** 으로 변경했습니다.", ephemeral=True
+        )
+
+    @settings_group.command(name="구매", description="이 서버의 상품 구매 가능 여부를 변경합니다.")
+    @app_commands.describe(상태="켜기 또는 끄기")
+    @app_commands.choices(
+        상태=[
+            app_commands.Choice(name="켜기", value="on"),
+            app_commands.Choice(name="끄기", value="off"),
+        ]
+    )
+    @app_commands.check(admin_predicate)
+    async def settings_buy(interaction: discord.Interaction, 상태: app_commands.Choice[str]) -> None:
+        enabled = 1 if 상태.value == "on" else 0
+        db.update_guild(interaction.guild_id, buy_enabled=enabled)
+        db.audit(interaction.guild_id, str(interaction.user.id), "settings.buy", str(enabled))
+        await interaction.response.send_message(
+            f"✅ 상품 구매를 **{'켜짐' if enabled else '꺼짐'}** 으로 변경했습니다.", ephemeral=True
+        )
+
+    @settings_group.command(name="초기화", description="서버에서 바꾼 입금/구매수량 설정을 기본값으로 되돌립니다.")
+    @app_commands.describe(항목="초기화할 설정")
+    @app_commands.choices(
+        항목=[
+            app_commands.Choice(name="입금 한도", value="min_deposit"),
+            app_commands.Choice(name="최대 입금", value="max_deposit"),
+            app_commands.Choice(name="요청 만료", value="deposit_ttl_hours"),
+            app_commands.Choice(name="구매 수량", value="purchase_max_qty"),
+        ]
+    )
+    @app_commands.check(admin_predicate)
+    async def settings_reset(interaction: discord.Interaction, 항목: app_commands.Choice[str]) -> None:
+        bot.service.store.clear_guild(interaction.guild_id, 항목.value, actor=str(interaction.user.id))
+        await interaction.response.send_message(f"✅ **{항목.name}** 을(를) 기본값으로 되돌렸습니다.", ephemeral=True)
+
+    @settings_group.command(name="웹", description="설정을 바꿀 수 있는 웹 관리자 링크를 받습니다.")
+    @app_commands.check(admin_predicate)
+    async def settings_web(interaction: discord.Interaction) -> None:
+        url = bot.service.issue_login_token(interaction.guild_id, interaction.user.id, True)
+        view = discord.ui.View()
+        view.add_item(discord.ui.Button(label="설정 열기", url=url, style=discord.ButtonStyle.link))
+        await interaction.response.send_message(
+            "설정 탭에서 계좌·입금 한도·자동충전·브랜드까지 모두 바꿀 수 있습니다.\n"
+            f"링크는 {settings.login_token_minutes}분간 1회만 유효합니다.",
+            view=view,
+            ephemeral=True,
+        )
+
     # -------------------------------------------------------------- /라이센스
     license_group = app_commands.Group(name="라이센스", description="오너 전용 라이센스 관리")
 
@@ -1028,3 +1206,4 @@ def register_commands(bot: WiaBot) -> None:
     for command in (panel_command, admin_command, register_command, webpanel_command, send_command, charge_command, balance_command, deposit_command, buy_command, notice_command, plan_command):
         tree.add_command(command)
     tree.add_command(license_group)
+    tree.add_command(settings_group)

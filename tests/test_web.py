@@ -127,6 +127,65 @@ async def scenario(tmp_path: Path) -> None:
             deposit_data = await deposit.json()
             assert deposit_data["pending"]["code"].startswith("W")
 
+            # 서버 설정: 입금 한도 변경 → 상점 API에 반영
+            guild_settings = await client.get(f"{BASE}/api/admin")
+            admin_payload = await guild_settings.json()
+            assert "settings" in admin_payload and "guild_settings" in admin_payload
+            assert admin_payload["settings"]["bank"]["name"]
+
+            update = await client.post(
+                f"{BASE}/api/admin/settings",
+                json={"min_deposit": 5000, "max_deposit": 50000, "purchase_max_qty": 3},
+                headers={"X-VDX-CSRF": "1", "Origin": BASE},
+            )
+            assert update.status == 200, await update.text()
+            updated = await update.json()
+            assert updated["settings"]["min_deposit"] == 5000
+
+            too_small = await client.post(
+                f"{BASE}/api/deposit",
+                json={"amount": 1000, "depositor": "홍길동"},
+                headers={"X-VDX-CSRF": "1", "Origin": BASE},
+            )
+            assert too_small.status == 400
+
+            # 전역(오너) 설정: 브랜드/계좌/토큰
+            global_get = await client.get(f"{BASE}/api/owner/settings")
+            assert global_get.status == 200
+            global_data = await global_get.json()
+            assert global_data["settings"]["brand_name"]
+            assert "value" not in global_data["settings"]["pushbullet_token"]
+
+            global_set = await client.post(
+                f"{BASE}/api/owner/settings",
+                json={
+                    "brand_name": "테스트브랜드",
+                    "bank_account": "110-999-888888",
+                    "pushbullet_token": {"value": "o.secret-token-1234"},
+                    "max_deposit": 2000000,
+                },
+                headers={"X-VDX-CSRF": "1", "Origin": BASE},
+            )
+            assert global_set.status == 200, await global_set.text()
+            after = (await global_set.json())["settings"]
+            assert after["brand_name"] == "테스트브랜드"
+            assert after["pushbullet_token"]["configured"] is True
+            assert "secret-token" not in after["pushbullet_token"]["hint"]
+
+            panel_after = await (await client.get(f"{BASE}/api/panel")).json()
+            assert panel_after["bank"]["account"] == "110-999-888888"
+            assert panel_after["brand"] == "테스트브랜드"
+            # 서버 재정의(50,000)가 전역 기본값(2,000,000)보다 우선한다
+            assert panel_after["settings"]["max_deposit"] == 50000
+            assert service.store.max_deposit() == 2000000
+
+            bad_setting = await client.post(
+                f"{BASE}/api/owner/settings",
+                json={"bank_account": "!!!"},
+                headers={"X-VDX-CSRF": "1", "Origin": BASE},
+            )
+            assert bad_setting.status == 400
+
             owner = await client.get(f"{BASE}/api/owner/summary")
             assert owner.status == 200
             owner_data = await owner.json()

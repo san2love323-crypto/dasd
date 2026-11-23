@@ -205,8 +205,10 @@ class PushbulletListener:
     # ------------------------------------------------------------------- life
     async def start(self) -> bool:
         if not self.token:
-            log.warning("PUSHBULLET_TOKEN 이 없어 자동충전 수신을 비활성화합니다.")
+            log.warning("Pushbullet 토큰이 없어 자동충전 수신을 비활성화합니다.")
             return False
+        self._closing = False
+        self._last_modified = time.time() - self.backfill_seconds
         self._session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30))
         try:
             await self.verify_token()
@@ -219,6 +221,22 @@ class PushbulletListener:
         ]
         log.info("pushbullet listener started (poll=%ss)", self.poll_seconds)
         return True
+
+    async def reconfigure(self, token: str) -> bool:
+        """토큰/설정 변경 시 리스너를 재시작한다."""
+        token = (token or "").strip()
+        if token == self.token and self._tasks:
+            return True
+        await self.stop()
+        self.token = token
+        self.connected = False
+        self.last_error = None
+        self._seen.clear()
+        if not token:
+            log.info("pushbullet token cleared; listener disabled")
+            return False
+        log.info("pushbullet listener reconfigured")
+        return await self.start()
 
     async def stop(self) -> None:
         self._closing = True

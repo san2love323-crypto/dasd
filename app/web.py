@@ -17,6 +17,7 @@ from .config import Settings
 from .db import Database, DatabaseError
 from .plans import public_catalog, resolve_plan
 from .service import ShopError, ShopService, product_json
+from .settings_store import GLOBAL_SPECS, SettingsError, SECRET_KEYS
 
 log = logging.getLogger("vendrix.web")
 
@@ -57,6 +58,7 @@ class WebServer:
         self.db = db
         self.settings = settings
         self.service = service
+        self.store = service.store
         self.pushbullet: Any | None = None
         self.limiter = RateLimiter()
         self.app = web.Application(
@@ -149,6 +151,8 @@ class WebServer:
         router.add_get("/api/admin/users", self.api_users)
 
         router.add_get("/api/owner/summary", self.api_owner_summary)
+        router.add_get("/api/owner/settings", self.api_owner_settings_get)
+        router.add_post("/api/owner/settings", self.api_owner_settings_set)
         router.add_get("/api/owner/licenses", self.api_owner_licenses)
         router.add_post("/api/owner/licenses", self.api_owner_issue)
         router.add_post("/api/owner/licenses/revoke", self.api_owner_revoke)
@@ -195,9 +199,9 @@ class WebServer:
         self, request: web.Request, template: str, context: dict | None = None, status: int = 200
     ) -> web.Response:
         ctx = {
-            "brand": self.settings.brand_name,
+            "brand": self.store.brand(),
             "year": utils.kst_now().year,
-            "support_url": self.settings.support_url,
+            "support_url": self.store.support_url(),
         }
         ctx.update(context or {})
         return aiohttp_jinja2.render_template(template, request, ctx, status=status)
@@ -335,7 +339,8 @@ class WebServer:
         session = self._require_session(request)
         data = await self._json_body(request)
         product_id = self._int(data, "product_id", low=1)
-        quantity = self._int(data, "quantity", 1, low=1, high=10)
+        max_qty = self.store.purchase_max_qty(session["guild_id"])
+        quantity = self._int(data, "quantity", 1, low=1, high=max_qty)
         result = await self.service.purchase(
             session["guild_id"], session["discord_id"], product_id, quantity, channel="web"
         )
@@ -356,7 +361,12 @@ class WebServer:
     async def api_deposit(self, request: web.Request) -> web.Response:
         session = self._require_session(request)
         data = await self._json_body(request)
-        amount = self._int(data, "amount", low=1, high=10_000_000)
+        amount = self._int(
+            data,
+            "amount",
+            low=self.store.min_deposit(session["guild_id"]),
+            high=self.store.max_deposit(session["guild_id"]),
+        )
         depositor = str(data.get("depositor") or "").strip()[:20]
         pending = self.service.create_deposit_request(
             session["guild_id"], session["discord_id"], amount, depositor
@@ -575,7 +585,19 @@ class WebServer:
                 fields[key] = 1 if data.get(key) else 0
         self.db.update_guild(session["guild_id"], **fields)
         self.db.audit(session["guild_id"], session["discord_id"], "settings.update", str(fields))
-        return web.json_response({"ok": True})
+
+        # 서버별 재정의 값 (빈 값/None 이면 전역 기본값으로 복원)
+        try:
+            for key in ("min_deposit", "max_deposit", "deposit_ttl_hours", "purchase_max_qty"):
+                if key in data:
+                    self.store.set_guild(
+                        session["guild_id"], key, data.get(key), actor=str(session["discord_id"])
+                    )
+        except SettingsError as exc:
+            raise ApiError(str(exc)) from exc
+        except KeyError as exc:
+            raise ApiError(f"알 수 없는 설정입니다: {exc}") from exc
+        return web.json_response({"ok": True, "settings": self.store.summary(session["guild_id"])})
 
     async def api_users(self, request: web.Request) -> web.Response:
         session = self._require_admin(request)
@@ -619,6 +641,51 @@ class WebServer:
                     for guild in guilds
                 ],
             }
+        )
+
+    async def api_owner_settings_get(self, request: web.Request) -> web.Response:
+        self._require_owner(request)
+        return web.json_response(
+            {
+                "ok": True,
+                "settings": self.store.global_view(redact=True),
+                "labels": {key: spec.label for key, spec in GLOBAL_SPECS.items()},
+                "pushbullet": {
+                    "connected": bool(getattr(self.pushbullet, "connected", False)),
+                    "status": self.pushbullet.status() if self.pushbullet else {"enabled": False},
+                },
+            }
+        )
+
+    async def api_owner_settings_set(self, request: web.Request) -> web.Response:
+        session = self._require_owner(request)
+        data = await self._json_body(request)
+        updated: dict[str, Any] = {}
+        token_changed = False
+        try:
+            for key, value in data.items():
+                if key not in GLOBAL_SPECS:
+                    continue
+                if key == "pushbullet_token":
+                    if isinstance(value, dict):
+                        if not value.get("value"):
+                            continue
+                        value = value.get("value")
+                    if not str(value).strip():
+                        continue
+                    token_changed = True
+                if key == "max_deposit" and "min_deposit" not in data:
+                    if int(value) < self.store.min_deposit():
+                        raise ApiError("최대 입금은 최소 입금보다 작을 수 없습니다.")
+                updated[key] = self.store.set_global(key, value, actor=str(session["discord_id"]))
+        except SettingsError as exc:
+            raise ApiError(str(exc)) from exc
+        if "min_deposit" in updated and self.store.max_deposit() < int(updated["min_deposit"]):
+            self.store.set_global("max_deposit", int(updated["min_deposit"]), actor=str(session["discord_id"]))
+        if token_changed or "pushbullet_allowed_packages" in updated or "pushbullet_blocked_packages" in updated:
+            await self.service.restart_pushbullet()
+        return web.json_response(
+            {"ok": True, "updated": sorted(updated), "settings": self.store.global_view(redact=True)}
         )
 
     async def api_owner_licenses(self, request: web.Request) -> web.Response:

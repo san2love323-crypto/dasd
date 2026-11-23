@@ -10,7 +10,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
-COPY run.py ./
+COPY main.py ./
 COPY .env.example ./
 
 RUN mkdir -p /app/data
@@ -18,4 +18,4 @@ RUN mkdir -p /app/data
 EXPOSE 8080
 VOLUME ["/app/data"]
 
-CMD ["python", "run.py"]
+CMD ["python", "main.py"]
