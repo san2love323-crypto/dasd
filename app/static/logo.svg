@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="VENDRIX">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset=".5" stop-color="#b9a3ff"/>
+      <stop offset="1" stop-color="#48e0ff"/>
+    </linearGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="1.6" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <g filter="url(#glow)">
+    <polygon points="50,2 91.6,26 91.6,74 50,98 8.4,74 8.4,26" fill="#0d0b24" stroke="url(#g)" stroke-width="2.6" stroke-linejoin="round"/>
+    <polygon points="50,6.4 87.8,28.2 87.8,71.8 50,93.6 12.2,71.8 12.2,28.2" fill="none" stroke="url(#g)" stroke-width=".7" opacity=".45"/>
+    <polygon points="17,21 35,21 50,55 65,21 83,21 58,85 42,85" fill="url(#g)"/>
+    <rect x="43.4" y="13.4" width="13.2" height="1.9" rx=".95" fill="#48e0ff"/>
+    <polygon points="82.6,27.2 85.6,30.2 82.6,33.2 79.6,30.2" fill="#f7f5ff" opacity=".92"/>
+  </g>
+</svg>

@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% from "_brand.html" import mark %}
+{% from "_icons.html" import icon %}
+{% block title %}{{ brand }} · 상점{% endblock %}
+{% block page_name %}shop{% endblock %}
+{% block body %}
+<header class="topbar">
+  <a class="brand" href="/panel">
+    {{ mark() }}
+    <span class="brand-text"><strong>{{ brand }}</strong><small>웹 패널</small></span>
+  </a>
+  <div class="topbar-right">
+    <span class="pill" id="guildPill">서버</span>
+    <span class="pill" id="userPill">···</span>
+    <a class="ghost-btn hidden" id="adminLink" href="/admin">관리자</a>
+    <a class="ghost-btn" href="/logout">로그아웃</a>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="hero">
+    <div class="hero-star" aria-hidden="true">
+      <svg viewBox="0 0 24 24"><path d="M12 2.6l2.9 5.9 6.5.9-4.7 4.6 1.1 6.5-5.8-3-5.8 3 1.1-6.5L2.6 9.4l6.5-.9z"/></svg>
+    </div>
+    <div class="hero-inner">
+      <div class="hero-brand">
+        {{ mark("hero-mark") }}
+        <span>{{ brand }}</span>
+      </div>
+      <p class="hero-sub">무인 스토어를 위한 자동화 엔진</p>
+      <div class="hero-meta">
+        <span class="hero-pill" id="heroGuild">서버</span>
+        <span class="hero-pill" id="heroLicense">LICENSE</span>
+        <span class="hero-pill hero-pill-plan" id="heroPlan">PLAN</span>
+      </div>
+    </div>
+  </section>
+
+  <nav class="action-row" aria-label="빠른 메뉴">
+    <button type="button" class="action-btn" data-action="products"><span class="action-ico">{{ icon("cart") }}</span>제품목록</button>
+    <button type="button" class="action-btn" data-action="buy"><span class="action-ico">{{ icon("card") }}</span>구매하기</button>
+    <button type="button" class="action-btn" data-action="me"><span class="action-ico">{{ icon("user") }}</span>유저정보</button>
+    <button type="button" class="action-btn" data-action="support"><span class="action-ico">{{ icon("chat") }}</span>문의하기</button>
+  </nav>
+
+  <div class="layout">
+    <div class="col-main">
+      <section class="card">
+        <div class="card-head">
+          <h2 class="card-title"><span class="title-icon">{{ icon("bell") }}</span>공지사항</h2>
+        </div>
+        <div class="notice-row"><span class="accent-bar"></span><p id="noticeText" class="notice-text">공지사항이 등록되지 않았습니다</p></div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h2 class="card-title"><span class="title-icon">{{ icon("sparkles") }}</span>이벤트</h2>
+        </div>
+        <div class="notice-row"><span class="accent-bar accent-bar-pink"></span><p id="eventText" class="notice-text">진행 중인 이벤트가 없습니다</p></div>
+      </section>
+
+      <section class="card" id="productsCard">
+        <div class="card-head">
+          <h2 class="card-title"><span class="title-icon">{{ icon("cart") }}</span>제품목록</h2>
+          <span class="muted" id="productCount">0개 상품</span>
+        </div>
+        <div class="product-grid" id="productGrid"></div>
+        <div class="empty hidden" id="productEmpty">등록된 상품이 없습니다.</div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h2 class="card-title"><span class="title-icon">{{ icon("receipt") }}</span>구매내역</h2>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead><tr><th>상품</th><th>수량</th><th>금액</th><th>상태</th><th>일시</th></tr></thead>
+            <tbody id="purchaseRows"></tbody>
+          </table>
+        </div>
+        <div class="empty hidden" id="purchaseEmpty">구매 내역이 없습니다.</div>
+      </section>
+    </div>
+
+    <aside class="col-side">
+      <section class="card balance-card">
+        <span class="label">보유 잔액</span>
+        <strong class="balance-value" id="balanceValue">0원</strong>
+        <span class="muted" id="spentValue">누적 사용 0원</span>
+        <div class="balance-glow" aria-hidden="true"></div>
+      </section>
+
+      <section class="card" id="depositCard">
+        <div class="card-head">
+          <h2 class="card-title"><span class="title-icon">{{ icon("plus") }}</span>충전하기</h2>
+        </div>
+        <div class="plan-lock hidden" id="autoChargeLock">
+          <strong>자동충전 잠김</strong>
+          <span id="autoChargeLockText">스탠다드 플랜부터 자동충전을 사용할 수 있습니다.</span>
+        </div>
+        <form id="depositForm" class="stack-form" autocomplete="off">
+          <label>입금 금액
+            <input name="amount" inputmode="numeric" placeholder="예: 10000" required>
+          </label>
+          <label>입금자명
+            <input name="depositor" placeholder="은행에 표시될 이름" maxlength="20" required>
+          </label>
+          <button class="primary-btn" type="submit">입금 요청 만들기</button>
+        </form>
+        <div class="bank-box">
+          <div class="bank-line"><span>은행</span><strong id="bankName">-</strong></div>
+          <div class="bank-line"><span>계좌</span><strong id="bankAccount">-</strong></div>
+          <div class="bank-line"><span>예금주</span><strong id="bankHolder">-</strong></div>
+          <button type="button" class="ghost-btn small" id="copyAccount">계좌 복사</button>
+        </div>
+        <div class="pending-list" id="pendingList"></div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h2 class="card-title"><span class="title-icon">{{ icon("chat") }}</span>문의</h2>
+        </div>
+        <p class="muted small-text">입금/구매 문의는 서버 관리자에게 DM으로 보내 주세요.</p>
+        <button type="button" class="secondary-btn full" id="supportLink">문의하기</button>
+      </section>
+    </aside>
+  </div>
+
+  <footer class="footer">
+    <span>{{ brand }}™</span>
+    <span id="nowText">-</span>
+    <span>AUTOMATED VENDING ENGINE</span>
+  </footer>
+</main>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div id="modalRoot"></div>
+{% endblock %}
+{% block boot %}<script type="application/json" id="boot">{{ boot|safe }}</script>{% endblock %}

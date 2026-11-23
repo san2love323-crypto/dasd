@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% from "_brand.html" import mark %}
+{% block title %}{{ brand }} · 웹 패널{% endblock %}
+{% block page_name %}landing{% endblock %}
+{% block body %}
+<header class="topbar">
+  <a class="brand" href="/">
+    {{ mark() }}
+    <span class="brand-text"><strong>{{ brand }}</strong><small>Vending System</small></span>
+  </a>
+  <div class="topbar-right">
+    <span class="pill pill-live"><span class="dot"></span> Online</span>
+  </div>
+</header>
+
+<main class="landing-wrap">
+  <section class="landing-card">
+    <div class="landing-glow" aria-hidden="true"></div>
+    <div class="hero-star" aria-hidden="true">
+      <svg viewBox="0 0 24 24"><path d="M12 2.6l2.9 5.9 6.5.9-4.7 4.6 1.1 6.5-5.8-3-5.8 3 1.1-6.5L2.6 9.4l6.5-.9z"/></svg>
+    </div>
+    <div class="landing-brand">
+      {{ mark("landing-mark") }}
+      <h1>{{ brand }}</h1>
+    </div>
+    <p class="landing-sub">무인 스토어를 위한 자동화 엔진</p>
+    <p class="landing-desc">
+      디스코드에서 <code>/웹패널</code> 을 입력하면<br>
+      1회용 로그인 링크를 받을 수 있습니다.
+    </p>
+    <ol class="landing-steps">
+      <li><span>1</span>디스코드 서버에서 <code>/등록</code> 으로 상점을 등록합니다.</li>
+      <li><span>2</span><code>/패널</code> 로 상점 패널을 게시합니다.</li>
+      <li><span>3</span><code>/웹패널</code> 링크로 잔액 충전과 구매를 관리합니다.</li>
+    </ol>
+    <p class="landing-note">보안을 위해 로그인 링크는 <strong>1회용</strong>이며 15분 후 만료됩니다.</p>
+  </section>
+</main>
+
+<footer class="footer">
+  <span>{{ brand }}™</span>
+  <span>{{ year }}</span>
+  <span>Discord · Web · Auto Charge</span>
+</footer>
+{% endblock %}

@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% from "_brand.html" import mark %}
+{% block title %}{{ brand }} · 안내{% endblock %}
+{% block page_name %}error{% endblock %}
+{% block body %}
+<main class="error-wrap">
+  <section class="card error-card">
+    {{ mark("brand-mark error-mark") }}
+    <h1>접속할 수 없습니다</h1>
+    <p class="muted">{{ message }}</p>
+    <a class="primary-btn" href="/">처음으로</a>
+  </section>
+</main>
+{% endblock %}

@@ -1,0 +1,26 @@
+{# 인라인 SVG 아이콘 모음 - 이모지 폰트가 없는 환경에서도 동일하게 보입니다. #}
+{% macro icon(name, cls="ico") -%}
+<svg class="{{ cls }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+{%- if name == "cart" -%}
+<circle cx="9.5" cy="20" r="1.3"/><circle cx="18" cy="20" r="1.3"/><path d="M2.6 3.6h2.2l2.3 11.3a1.6 1.6 0 0 0 1.6 1.3h8.7a1.6 1.6 0 0 0 1.6-1.3L20.6 7H6.3"/>
+{%- elif name == "card" -%}
+<rect x="2.6" y="5" width="18.8" height="14" rx="2.6"/><path d="M2.6 9.7h18.8"/><path d="M6.3 14.8h4.2"/>
+{%- elif name == "user" -%}
+<circle cx="12" cy="8.2" r="3.6"/><path d="M4.8 20.2c.7-3.5 3.6-5.5 7.2-5.5s6.5 2 7.2 5.5"/>
+{%- elif name == "chat" -%}
+<path d="M20.4 12.2c0 4-3.8 7.2-8.4 7.2-1 0-2-.1-2.9-.4L4.2 20.4l1.2-3.5c-1.5-1.3-2.4-3-2.4-4.7 0-4 3.8-7.2 8.4-7.2s9 3.2 9 7.2Z"/><path d="M8.6 12.1h.01M12 12.1h.01M15.4 12.1h.01"/>
+{%- elif name == "bell" -%}
+<path d="M18.2 16.3H5.8l1.3-2.2V10a4.9 4.9 0 0 1 9.8 0v4.1z"/><path d="M9.9 19.3a2.2 2.2 0 0 0 4.2 0"/>
+{%- elif name == "sparkles" -%}
+<path d="M12 3.2l1.7 4.6 4.6 1.7-4.6 1.7L12 15.8l-1.7-4.6L5.7 9.5l4.6-1.7z"/><path d="M18.4 15.2l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z"/>
+{%- elif name == "receipt" -%}
+<path d="M6 2.9h12v18.2l-3-1.7-3 1.7-3-1.7-3 1.7z"/><path d="M9 7.4h6M9 11h6M9 14.6h4"/>
+{%- elif name == "wallet" -%}
+<rect x="2.7" y="5.6" width="18.6" height="13" rx="2.6"/><path d="M2.7 9.7h18.6"/><path d="M16.5 14.6h2.2"/>
+{%- elif name == "plus" -%}
+<circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/>
+{%- elif name == "close" -%}
+<path d="M6 6l12 12M18 6L6 18"/>
+{%- endif -%}
+</svg>
+{%- endmacro %}

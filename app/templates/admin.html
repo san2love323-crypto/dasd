@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+{% from "_brand.html" import mark %}
+{% block title %}{{ brand }} · 관리자{% endblock %}
+{% block page_name %}admin{% endblock %}
+{% block body %}
+<header class="topbar">
+  <a class="brand" href="/admin">
+    {{ mark() }}
+    <span class="brand-text"><strong>{{ brand }}</strong><small>Admin Console</small></span>
+  </a>
+  <div class="topbar-right">
+    <span class="pill pill-admin">ADMIN</span>
+    <a class="ghost-btn" href="/panel">상점 보기</a>
+    <a class="ghost-btn" href="/logout">로그아웃</a>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="page-head">
+    <div>
+      <h1 class="page-title">상점 관리자</h1>
+      <p class="muted" id="adminGuild">서버</p>
+    </div>
+    <span class="chip" id="adminLicense">라이센스 확인 중</span>
+  </div>
+
+  <nav class="tabs" aria-label="관리자 메뉴">
+    <button class="tab-btn active" data-tab="dashboard">대시보드</button>
+    <button class="tab-btn" data-tab="products">제품</button>
+    <button class="tab-btn" data-tab="deposits">입금</button>
+    <button class="tab-btn" data-tab="users">회원</button>
+    <button class="tab-btn" data-tab="settings">설정</button>
+    <button class="tab-btn hidden" data-tab="licenses" id="licenseTab">라이센스</button>
+  </nav>
+
+  <section class="tab-panel" data-tab="dashboard">
+    <div class="stats-grid" id="statsGrid"></div>
+    <div class="card">
+      <div class="card-head">
+        <h2 class="card-title">라이센스 상태</h2>
+        <span class="chip" id="licenseBadge">-</span>
+      </div>
+      <p class="muted" id="licenseInfo">-</p>
+      <p class="muted" id="planInfo">-</p>
+    </div>
+    <div class="card">
+      <div class="card-head"><h2 class="card-title">최근 활동</h2></div>
+      <ul class="audit-list" id="auditList"></ul>
+    </div>
+  </section>
+
+  <section class="tab-panel hidden" data-tab="products">
+    <div class="card">
+      <div class="card-head">
+        <h2 class="card-title">제품 관리</h2>
+        <div class="inline-form">
+          <span class="chip" id="productLimit">-</span>
+          <button type="button" class="primary-btn" id="addProductBtn">+ 상품 추가</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead><tr><th>상품</th><th>가격</th><th>전달</th><th>재고</th><th>상태</th><th class="right">관리</th></tr></thead>
+          <tbody id="productRows"></tbody>
+        </table>
+      </div>
+      <div class="empty hidden" id="productEmpty">등록된 상품이 없습니다.</div>
+    </div>
+  </section>
+
+  <section class="tab-panel hidden" data-tab="deposits">
+    <div class="card">
+      <div class="card-head">
+        <h2 class="card-title">입금 내역</h2>
+        <select id="depositFilter" class="compact">
+          <option value="">전체 상태</option>
+          <option value="review">검토 필요</option>
+          <option value="unmatched">미매칭</option>
+          <option value="matched">충전 완료</option>
+          <option value="ignored">무시</option>
+        </select>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead><tr><th>시간</th><th>입금자</th><th>금액</th><th>상태</th><th>알림</th><th class="right">관리</th></tr></thead>
+          <tbody id="depositRows"></tbody>
+        </table>
+      </div>
+      <div class="empty hidden" id="depositEmpty">입금 내역이 없습니다.</div>
+    </div>
+  </section>
+
+  <section class="tab-panel hidden" data-tab="users">
+    <div class="card">
+      <div class="card-head">
+        <h2 class="card-title">회원</h2>
+        <div class="inline-form">
+          <input id="userSearch" class="compact" placeholder="디스코드 ID 검색" inputmode="numeric">
+          <button type="button" class="secondary-btn" id="userSearchBtn">검색</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead><tr><th>회원 ID</th><th>잔액</th><th>누적 사용</th><th class="right">관리</th></tr></thead>
+          <tbody id="userRows"></tbody>
+        </table>
+      </div>
+      <div class="empty hidden" id="userEmpty">회원이 없습니다.</div>
+    </div>
+  </section>
+
+  <section class="tab-panel hidden" data-tab="settings">
+    <form class="card stack-form" id="settingsForm" autocomplete="off">
+      <div class="card-head"><h2 class="card-title">상점 설정</h2></div>
+      <label>공지사항
+        <textarea name="notice" rows="3" maxlength="500" placeholder="공지사항이 등록되지 않았습니다"></textarea>
+      </label>
+      <label>이벤트
+        <textarea name="event_text" rows="3" maxlength="500" placeholder="진행 중인 이벤트가 없습니다"></textarea>
+      </label>
+      <div class="form-grid">
+        <label>로그 채널 ID
+          <input name="log_channel_id" inputmode="numeric" placeholder="예: 123456789012345678">
+        </label>
+        <label>관리자 역할 ID
+          <input name="admin_role_id" inputmode="numeric" placeholder="예: 123456789012345678">
+        </label>
+      </div>
+      <div class="switch-row">
+        <label class="switch"><input type="checkbox" name="auto_charge"><span class="track"></span><span>자동충전</span></label>
+        <label class="switch"><input type="checkbox" name="buy_enabled"><span class="track"></span><span>구매 활성화</span></label>
+      </div>
+      <button class="primary-btn" type="submit">설정 저장</button>
+      <p class="muted small-text">설정 저장 후 <code>/패널</code> 을 다시 게시하면 공지/이벤트가 반영됩니다.</p>
+    </form>
+  </section>
+
+  <section class="tab-panel hidden" data-tab="licenses">
+    <div class="stats-grid" id="licenseStats"></div>
+    <div class="card">
+      <div class="card-head"><h2 class="card-title">라이센스 발급</h2><span class="chip chip-gold">OWNER ONLY</span></div>
+      <form id="licenseForm" class="form-grid" autocomplete="off">
+        <label>수량<input name="count" type="number" min="1" max="50" value="1" required></label>
+        <label>기간(일)<input name="days" type="number" min="1" max="3650" value="30" required></label>
+        <label>플랜
+          <select name="plan">
+            <option value="basic">베이직 · 자동충전 불가</option>
+            <option value="standard" selected>스탠다드 · 자동충전 가능</option>
+            <option value="premium">프리미엄 · 역할 지급</option>
+            <option value="platinum">플래티넘 · 무제한</option>
+          </select>
+        </label>
+        <label>메모<input name="note" maxlength="100" placeholder="관리용 메모"></label>
+        <button class="primary-btn" type="submit">키 발급</button>
+      </form>
+      <div id="licenseResult" class="license-result"></div>
+    </div>
+    <div class="card">
+      <div class="card-head">
+        <h2 class="card-title">발급 목록</h2>
+        <button type="button" class="secondary-btn" id="licenseRefresh">새로고침</button>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead><tr><th>키</th><th>플랜</th><th>기간</th><th>상태</th><th>사용 서버</th><th>발급일</th><th class="right">관리</th></tr></thead>
+          <tbody id="licenseRows"></tbody>
+        </table>
+      </div>
+      <div class="empty hidden" id="licenseEmpty">발급된 라이센스가 없습니다.</div>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <span>{{ brand }}™</span>
+    <span>{{ year }}</span>
+    <span>Admin Console</span>
+  </footer>
+</main>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div id="modalRoot"></div>
+{% endblock %}
+{% block boot %}<script type="application/json" id="boot">{{ boot|safe }}</script>{% endblock %}

@@ -1,0 +1,13 @@
+.venv/
+data/
+__pycache__/
+*.pyc
+.pytest_cache/
+.env
+tests/
+docs/
+tools/
+shots_*.png
+*.db
+*.db-wal
+*.db-shm
